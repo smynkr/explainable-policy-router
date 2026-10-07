@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,6 +150,64 @@ test("CLI rejects unknown flags, duplicate flags, and missing values", () => {
   assert.equal(duplicate.status, 2);
   const missing = runCli(["replay", "--policy"]);
   assert.equal(missing.status, 2);
+});
+
+test("validation errors identify the input file for every policy role and a single request", async (t) => {
+  const directory = await makeTempDir(t);
+  const validPolicyPath = join(examples, "baseline.json");
+  const policy = JSON.parse(await readFile(validPolicyPath, "utf8"));
+  policy.rules[0].priority = -1;
+  const invalidPolicyPath = await writeTemp(directory, "invalid-policy.json", JSON.stringify(policy));
+  const requestPath = join(examples, "request.json");
+  const requestsPath = join(examples, "requests.jsonl");
+  const request = JSON.parse(await readFile(requestPath, "utf8"));
+  request.inputTokens = -1;
+  const invalidRequestPath = await writeTemp(directory, "invalid-request.json", JSON.stringify(request));
+
+  for (const [args, inputPath, fieldPath] of [
+    [["explain", "--policy", invalidPolicyPath, "--request", requestPath], invalidPolicyPath, "$.rules[0].priority"],
+    [["replay", "--policy", invalidPolicyPath, "--requests", requestsPath], invalidPolicyPath, "$.rules[0].priority"],
+    [["compare", "--before", invalidPolicyPath, "--after", validPolicyPath, "--requests", requestsPath], invalidPolicyPath, "$.rules[0].priority"],
+    [["compare", "--before", validPolicyPath, "--after", invalidPolicyPath, "--requests", requestsPath], invalidPolicyPath, "$.rules[0].priority"],
+    [["explain", "--policy", validPolicyPath, "--request", invalidRequestPath], invalidRequestPath, "$.inputTokens"],
+  ]) {
+    const result = runCli(args);
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes(inputPath), result.stderr);
+    assert.ok(result.stderr.includes(fieldPath), result.stderr);
+    assert.match(result.stderr, /\[out_of_range\]/);
+  }
+});
+
+test("closed stdout is an I/O failure, including comparison and a running demo server", async (t) => {
+  const directory = await makeTempDir(t);
+  const request = JSON.parse(await readFile(join(examples, "request.json"), "utf8"));
+  const requestsPath = await writeTemp(directory, "many.jsonl", `${JSON.stringify(request)}\n`.repeat(2000));
+  const baseline = join(examples, "baseline.json");
+  for (const args of [
+    ["replay", "--policy", baseline, "--requests", requestsPath],
+    ["compare", "--before", baseline, "--after", join(examples, "candidate.json"), "--requests", requestsPath],
+    ["demo", "--port", "0"],
+  ]) {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd: packageRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000,
+      killSignal: "SIGKILL",
+    });
+    t.after(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    });
+    const closed = once(child, "close");
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+    child.stdout.destroy();
+    const [code, signal] = await closed;
+    assert.equal(signal, null, stderr);
+    assert.equal(code, 2, stderr);
+    assert.match(stderr, /EPIPE|ECONNRESET/);
+  }
 });
 
 test("server binds an ephemeral loopback port and serves only hardened allowlisted assets", async (t) => {

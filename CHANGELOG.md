@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — reference release corrections
+
+- Report each unknown action field once while continuing to reject fields from other action variants.
+- Identify the input file in policy and single-request validation errors, including before/after policy roles during comparison.
+- Treat closed stdout as an I/O failure with exit code 2, including when a comparison found changes or the local demo server is running.
+- Add behavioral regressions for these cases. Routing semantics, schema version, dependencies and the unmaintained/as-is release boundary are unchanged.
+
 ## 1.0.0 — reference release
 
 - Standalone Apache-2.0 routing evaluator with strict runtime validation, ordered route/block/tag rules, explicit capacity checks, and complete rule/predicate traces.
