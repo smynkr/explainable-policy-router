@@ -156,9 +156,10 @@ async function readJsonlRequests(path: string): Promise<RequestRecord[]> {
   }
   return records;
 }
-function throwRequestValidation(path: string, line: number, error: unknown): never {
+function throwRequestValidation(path: string, line: number | undefined, error: unknown): never {
   if (error instanceof ValidationError) {
-    throw new CliError(`Invalid request in "${path}" at line ${line}: ${validationMessage(error)}`);
+    const location = line === undefined ? "" : ` at line ${line}`;
+    throw new CliError(`Invalid request in "${path}"${location}: ${validationMessage(error)}`);
   }
   throw error;
 }
@@ -200,15 +201,29 @@ function renderDecision(decision: Decision): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function loadPolicy(path: string): Promise<Policy> {
-  return validatePolicy(await readJson(path, "policy"));
+async function loadPolicy(path: string, label = "policy"): Promise<Policy> {
+  const input = await readJson(path, label);
+  try {
+    return validatePolicy(input);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      throw new CliError(`Invalid ${label} file "${path}": ${validationMessage(error)}`);
+    }
+    throw error;
+  }
 }
 
 async function explain(args: readonly string[]): Promise<number> {
   const flags = parseFlags(args, { "--policy": "value", "--request": "value", "--json": "switch" }, ["--policy", "--request"]);
   const policy = await loadPolicy(value(flags, "--policy"));
-  const request = await readJson(value(flags, "--request"), "request");
-  const decision = evaluate(policy, request);
+  const requestPath = value(flags, "--request");
+  const request = await readJson(requestPath, "request");
+  let decision: Decision;
+  try {
+    decision = evaluate(policy, request);
+  } catch (error) {
+    throwRequestValidation(requestPath, undefined, error);
+  }
   if (flags.has("--json")) {
     writeJson(decision);
   } else {
@@ -242,8 +257,8 @@ async function compare(args: readonly string[]): Promise<number> {
     { "--before": "value", "--after": "value", "--requests": "value" },
     ["--before", "--after", "--requests"],
   );
-  const before = await loadPolicy(value(flags, "--before"));
-  const after = await loadPolicy(value(flags, "--after"));
+  const before = await loadPolicy(value(flags, "--before"), "before policy");
+  const after = await loadPolicy(value(flags, "--after"), "after policy");
   const requestsPath = value(flags, "--requests");
   const requests = await readJsonlRequests(requestsPath);
   const results = requests.map(({ line, request }) => {
@@ -331,6 +346,10 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
+  process.stdout.on("error", (error: Error) => {
+    // Output is already unusable. Flush the diagnostic, then stop even if the demo server is live.
+    process.stderr.write(`route-policy: ${describeError(error)}\n`, () => process.exit(2));
+  });
   void main().then((code) => {
     process.exitCode = code;
   }, (error: unknown) => {

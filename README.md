@@ -24,10 +24,10 @@ No credentials, database, telemetry, remote assets, browser persistence, or paid
 
 ## Library
 
-After building, import `./dist/index.js` directly. Alternatively, run `npm pack` and install the resulting `routeshift-policy-router-1.0.0.tgz` in another project:
+After building, import `./dist/index.js` directly. Alternatively, run `npm pack` and install the resulting `routeshift-policy-router-1.0.1.tgz` in another project:
 
 ```sh
-npm install /absolute/path/to/routeshift-policy-router-1.0.0.tgz
+npm install /absolute/path/to/routeshift-policy-router-1.0.1.tgz
 ```
 
 The package is deliberately marked `private` to prevent accidental registry publication; this does not restrict its Apache license or installation from a local package. No registry publication is implied.
@@ -137,8 +137,8 @@ node dist/cli.js compare --before examples/baseline.json --after examples/candid
 - `compare` emits `{total, changed, results}`. Each result includes its physical line, request, `changed` flag, and full `before`/`after` decisions.
 - JSONL contains **one compact JSON request per line**, not pretty-printed multiline JSON. CRLF, LF and CR line endings are accepted.
 - Replay and comparison validate/evaluate every record before writing stdout. An invalid later record produces no misleading earlier success output. They buffer input and results in memory; they are not streaming processors.
-- Exit `0`: successful evaluation, including an explicit block or unchanged comparison. Exit `1`: successful comparison found changed decisions. Exit `2`: usage, validation, or I/O failure. Do not interpret comparison exit `1` as a crashed evaluator.
-- Errors go to stderr with field paths/codes or file/line context, without malformed JSON excerpts. Policy/request values and traces intentionally appear in successful output; do not put secrets in metadata or policy labels.
+- Exit `0`: successful evaluation, including an explicit block or unchanged comparison. Exit `1`: successful comparison found changed decisions. Exit `2`: usage, validation, or I/O failure, including a closed stdout reader. Output failure takes precedence over comparison differences and stops the local demo server if its startup output cannot be written.
+- Errors go to stderr. Input validation errors identify the filename and field paths/codes; JSONL errors also include the physical line. Comparison policy errors identify the before/after role. Each unknown action field is reported once, and malformed JSON excerpts are not echoed. Policy/request values and traces intentionally appear in successful output; do not put secrets in metadata or policy labels.
 
 The shipped comparison changes only the first request's decision: `compact` becomes `large`. The fourth request changes its trace but still selects the same default destination. The other examples show cascading tags, an explicit block, and a default capacity block. These demonstrate semantics, not quality, cost, or latency outcomes.
 

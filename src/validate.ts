@@ -279,7 +279,8 @@ function parseAction(
   allowTag: boolean,
 ): Action | DefaultAction | undefined {
   const start = issues.length;
-  const record = readRecord(value, path, ['type', 'target', 'reason', 'tags'], issues);
+  const actionKeys = ['type', 'target', 'reason', 'tags'];
+  const record = readRecord(value, path, actionKeys, issues);
   if (!record) return undefined;
   const type = readText(record, 'type', path, issues);
   const variantKeys = type === 'route'
@@ -289,8 +290,8 @@ function parseAction(
       : type === 'tag'
         ? ['type', 'tags']
         : ['type'];
-  for (const key of Object.keys(record)) {
-    if (!variantKeys.includes(key)) {
+  for (const key of actionKeys) {
+    if (has(record, key) && !variantKeys.includes(key)) {
       addIssue(issues, `${path}.${key}`, 'unknown_field', 'This field is not valid for the action type.');
     }
   }

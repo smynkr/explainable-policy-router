@@ -376,3 +376,26 @@ test('invalid action values do not leak into validation diagnostics', () => {
     return true;
   });
 });
+
+test('unknown action fields are reported once without accepting fields from other action variants', () => {
+  for (const [action, invalidVariantField] of [
+    [{ type: 'route', target: small, reason: 'wrong variant' }, 'reason'],
+    [{ type: 'block', reason: 'blocked', target: small }, 'target'],
+    [{ type: 'tag', tags: ['added'], target: small }, 'target'],
+  ]) {
+    const policy = makePolicy({
+      rules: [{ id: 'invalid-fields', priority: 0, when: {}, then: { ...action, extra: true } }],
+    });
+    assert.throws(() => validatePolicy(policy), (error) => {
+      assert.ok(error instanceof ValidationError);
+      assert.deepEqual(
+        error.issues.map(({ path, code }) => [path, code]).sort(),
+        [
+          ['$.rules[0].then.extra', 'unknown_field'],
+          [`$.rules[0].then.${invalidVariantField}`, 'unknown_field'],
+        ].sort(),
+      );
+      return true;
+    });
+  }
+});
